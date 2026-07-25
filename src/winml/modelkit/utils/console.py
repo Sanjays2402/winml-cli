@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import functools
 import logging
+import os
+import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
@@ -46,9 +48,29 @@ ICON_SKIP = "\u23f8\ufe0f "  # ⏸️
 ICON_ERROR = "\u274c"  # ❌
 
 
+def supports_ansi(stream: Any = None) -> bool:
+    """Return True when ANSI escape sequences are safe to emit on ``stream``.
+
+    Mirrors ``_supports_ansi_log_color`` in ``analyze/core/runtime_checker_query``:
+    honor ``NO_COLOR`` first, then require an interactive TTY. A non-TTY (pipe,
+    file, CI log) and a legacy Windows console both render raw escape codes as
+    literal garbage rather than interpreting them, so neither should get color.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    target = stream if stream is not None else getattr(sys, "stderr", None)
+    return bool(target and hasattr(target, "isatty") and target.isatty())
+
+
 def get_console() -> Console:
-    """Return a Console that prints to stderr."""
-    return Console(stderr=True)
+    """Return a Console that prints to stderr.
+
+    Color is disabled when the destination cannot interpret ANSI escapes. On
+    Windows terminals using a legacy code page (e.g. cp936/cp1252) the raw
+    sequences would otherwise be written through verbatim, turning an error
+    message into unreadable output at exactly the moment it matters.
+    """
+    return Console(stderr=True, no_color=not supports_ansi())
 
 
 # ══════════════════════════════════════════════════════════════════════════
